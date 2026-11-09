@@ -1,0 +1,34 @@
+services:
+  mysql:
+    environment:
+      MYSQL_DATABASE: gatekeeper
+      MYSQL_ROOT_PASSWORD: asdasdasd
+      MYSQL_USER: gatekeeper_admin
+      MYSQL_PASSWORD: asdasdasd
+
+  web:
+    environment:
+      DJANGO_DEBUG: "True"
+      JWT_ALG: HS256
+      JWT_ACCESS_TOKEN_MINUTES: "60"
+      JWT_REFRESH_TOKEN_DAYS: "30"
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8001"
+      SUPERUSER_USERNAME: admin
+      SUPERUSER_EMAIL: admin@example.com
+      SUPERUSER_PASSWORD: admin
+      DEPLOYMENT_PROFILE: demo
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: gatekeeper_admin
+      DB_PASS: asdasdasd
+      DB_NAME: gatekeeper
+      EXTRA_ALLOWED_HOSTS: "host.docker.internal,localhost,127.0.0.1,web,django_gatekeeper"
+      INTERNAL_GK_URL: "http://gatekeeper:8001/"
+      # The development stack raises the anonymous-login throttle above the out-of-box 100/hour; the default in
+      # gatekeeper/settings.py is untouched for any deployment that does not set this override.
+      GK_ANON_THROTTLE_RATE: "100000/hour"
+      # The development stack enables the request log, so smoke tests can confirm that calls are
+      # proxied through GateKeeper. Out-of-box default (settings.py) is untouched for any
+      # deployment that doesn't set this override.
+      GK_ACCESS_LOG_ENABLED: "True"

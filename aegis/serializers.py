@@ -1,7 +1,9 @@
 # serializers.py
 
+import logging
 from typing import cast, TYPE_CHECKING
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 
@@ -11,6 +13,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 if TYPE_CHECKING:
     from aegis.models import DefaultAuthUserExtend
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_CREDENTIAL_PAIRS = {
+    ("admin", "admin"),
+}
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -29,6 +37,15 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         # Extract username/email and service_name from the request data
         login_identifier = (attrs.get("username") or "").strip()  # Can be either username or email
+        password = attrs.get("password") or ""
+
+        if settings.DEPLOYMENT_PROFILE != "demo" and (login_identifier.lower(), password) in _DEFAULT_CREDENTIAL_PAIRS:
+            logger.warning(
+                "Login rejected: default credential pair attempted for identifier=%r (DEPLOYMENT_PROFILE=%s)",
+                login_identifier,
+                settings.DEPLOYMENT_PROFILE,
+            )
+            raise AuthenticationFailed("No active account found with the given credentials.")
 
         # Get the user model
         user_model = get_user_model()

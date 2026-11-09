@@ -1,12 +1,55 @@
 services:
+  mysql:
+    image: openagri-gatekeeper-mysql
+    build: ./mysql_docker
+    restart: no
+    container_name: oa_gk_mysql_django
+    env_file:
+      - .env
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gatekeeper}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_USER: ${MYSQL_USER:-gatekeeper_admin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-asdasdasd}
+    ports:
+      - "3312:3306"
+    volumes:
+      - oa_gk_volume:/var/lib/mysql
+    networks:
+      - oa_network
+    command:
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h localhost -u${MYSQL_USER:-gatekeeper_admin} -p${MYSQL_PASSWORD:-asdasdasd} --silent
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  phpmyadmin_gatekeeper:
+    image: phpmyadmin/phpmyadmin
+    container_name: oa_gk_phpmyadmin_django
+    restart: no
+    env_file:
+      - .env
+    ports:
+      - "8088:80"
+    networks:
+      - oa_network
+    depends_on:
+      - mysql
+
   web:
-    image: ghcr.io/${DOCKER_REGISTRY}/openagri-gatekeeper:${TAG}
+    image: ghcr.io/${DOCKER_REGISTRY:-openagri-eu}/openagri-gatekeeper:${TAG:-latest}
     container_name: django_gatekeeper
     restart: no
     build:
       context: .
       args:
-        SOURCE_REPO: ${SOURCE_REPO}
+        SOURCE_REPO: ${SOURCE_REPO:-https://github.com/openagri-eu/GateKeeper.git}
     env_file:
       - .env
     volumes:
@@ -16,9 +59,26 @@ services:
       - logs_volume:/var/www/logs
     ports:
       - "8001:8001"
+    networks:
+      - oa_network
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:${APP_PORT:-8001}/healthz/ || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   asset_volume:
   media_volume:
   logs_volume:
+  oa_gk_volume: {}
 
+networks:
+  oa_network:
+    driver: bridge

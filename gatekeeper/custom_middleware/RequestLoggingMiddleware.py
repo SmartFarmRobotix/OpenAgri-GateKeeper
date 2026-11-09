@@ -5,22 +5,12 @@ class RequestLoggingMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
-    def process_request(self, request):
-        # Don't log requests for static files
-        if request.path.startswith("/assets/"):
-            return None  # Bypass static file requests
-
-        # This method should log the body before any other processing consumes it
-        body = request.body.decode('utf-8') if request.body else ''
-        request.logged_body = body  # Store it on request if needed later
-
     def __call__(self, request):
         # Don't log requests for static files
         if request.path.startswith("/assets/"):
             return self.get_response(request)  # Bypass logging
 
-        # Access the stored body
-        body = getattr(request, 'logged_body', '')
+        body = request.body.decode('utf-8') if request.body else ''
 
         # Ensure user_agent is never None
         user_agent = request.META.get('HTTP_USER_AGENT', 'unknown')

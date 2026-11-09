@@ -66,7 +66,7 @@ That’s it! No complex setup. No extra steps. Just make sure your service can s
 
 ### Configure Environement Variables
 
-Copy the `.env.sample` file into a new file called `.env`. Then change its content accordingly. Here is a list of the most important configuration variables and their use:
+Copy the `.env.example` file into a new file called `.env`. Then change its content accordingly. Here is a list of the most important configuration variables and their use:
 
 * DB_<USER|PASS|HOST|PORT>= used to set the database configuration for user, password, the ip address hosting the database, and the port used.
 * DATABASE_URL= this is an alternative configuration that can be used instead of the previous one, by representing all the database configs as a single url.
@@ -80,12 +80,17 @@ Copy the `.env.sample` file into a new file called `.env`. Then change its conte
 \* In the future this information will be provided by each service uppon registration, instead of being set in the gatekeeper config.
 
 ### Running
-To start up the container with the OpenAgri Gatekeeper service, you can run the command:
+To start up the containers with the OpenAgri Gatekeeper service, you can run the command:
 
 ```
 $ docker compose up -d
 ```
-this will start both the DB (postgres) and the Gatekeeper service containers.
+
+This brings up the MySQL DB, a phpMyAdmin instance (port 8088) and the GateKeeper service containers from the
+unified compose file. The other OpenAgri services attach to this stack's network as `openagri-gatekeeper_oa_network`:
+start GateKeeper with `docker compose -p openagri-gatekeeper up -d`, or from a directory named `openagri-gatekeeper`.
+For a development stack (demo profile, admin/admin, raised anonymous throttle):
+`docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`.
 
 To access the service on the web, you can go to:
 `http://localhost:8001/login/`

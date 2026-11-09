@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 import uuid
 import requests
 
@@ -17,9 +18,42 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from aegis.models import RegisteredService
-from aegis.utils.service_utils import match_endpoint
 
 LOG = logging.getLogger(__name__)
+
+UPSTREAM_ERR_PREVIEW_MAX_CHARS = 250
+
+_SENSITIVE_FIELD_RE = re.compile(
+    r'''(?i)(['"][\w\-]*(?:token|password|secret|access|refresh|authorization)[\w\-]*['"]\s*:\s*)'''
+    r'''(['"])(?:\\.|(?!\2).)*\2''',
+)
+
+
+def _redact_sensitive_fields(text):
+    """Redact token/password/secret-shaped JSON field values in `text`."""
+    return _SENSITIVE_FIELD_RE.sub(r'\1"***REDACTED***"', text)
+
+
+PROXY_RETRY_ATTEMPTS = 2
+PROXY_RETRY_BACKOFF_SECONDS = 0.5
+
+
+def _call_upstream_with_retry(method, upstream_url, request_kwargs, corr_id):
+    """Call requests.request, retrying transient connection-level failures only."""
+    last_exc = None
+    for attempt in range(1, PROXY_RETRY_ATTEMPTS + 1):
+        try:
+            return requests.request(method, upstream_url, **request_kwargs)
+        except requests.exceptions.ConnectionError as exc:
+            last_exc = exc
+            if attempt < PROXY_RETRY_ATTEMPTS:
+                LOG.warning(
+                    "GK PROXY transient connection error, retrying (%d/%d) corr=%s: %s",
+                    attempt, PROXY_RETRY_ATTEMPTS, corr_id, exc,
+                )
+                time.sleep(PROXY_RETRY_BACKOFF_SECONDS)
+    raise last_exc
+
 
 class RegisterServiceAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -118,7 +152,7 @@ class RegisterServiceAPIView(APIView):
             )
 
             for existing_service in existing_services:
-                if match_endpoint(endpoint, existing_service.endpoint):
+                if existing_service.endpoint == endpoint:
                     # Update the existing service with new data
                     existing_service.base_url = base_url
                     existing_service.service_name = service_name
@@ -472,7 +506,15 @@ class NewReverseProxyAPIView(APIView):
             # -------- Call upstream --------
             LOG.debug("[GK][dispatch_request] calling upstream method=%s url=%s headers=%s",
                       method, upstream_url, list(forward_headers.keys()))
-            resp = requests.request(method, upstream_url, **request_kwargs)
+            try:
+                resp = _call_upstream_with_retry(method, upstream_url, request_kwargs, corr_id)
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+                LOG.warning("GK PROXY upstream unreachable svc=%s corr=%s: %s",
+                            service_entry.service_name, corr_id, exc)
+                return JsonResponse(
+                    {'error': f"Upstream service '{service_entry.service_name}' is unreachable."},
+                    status=status.HTTP_502_BAD_GATEWAY
+                )
             LOG.debug("[GK][dispatch_request] upstream responded status=%s", resp.status_code)
 
             resp_ct = resp.headers.get("Content-Type", "")
@@ -483,13 +525,25 @@ class NewReverseProxyAPIView(APIView):
             if resp.status_code >= 400:
                 try:
                     if ("application/json" in resp_ct) or ("text/" in resp_ct):
-                        LOG.warning("UPSTREAM ERR preview corr=%s: %s", corr_id, resp.text[:1500])
+                        redacted_body = _redact_sensitive_fields(resp.text)
+                        preview = redacted_body[:UPSTREAM_ERR_PREVIEW_MAX_CHARS]
+                        LOG.warning("UPSTREAM ERR preview corr=%s: %s", corr_id, preview)
                     else:
                         LOG.warning("UPSTREAM ERR non-text body corr=%s", corr_id)
                 except Exception:
                     LOG.warning("UPSTREAM ERR (no preview) corr=%s", corr_id)
 
-            excluded_resp = {"content-encoding", "transfer-encoding", "connection"}
+            excluded_resp = {
+                "content-encoding",
+                "transfer-encoding",
+                "connection",
+                "keep-alive",
+                "proxy-authenticate",
+                "proxy-authorization",
+                "te",
+                "trailers",
+                "upgrade",
+            }
             django_resp = StreamingHttpResponse(resp.iter_content(chunk_size=64 * 1024),
                                                 status=resp.status_code)
 
@@ -528,4 +582,3 @@ class NewReverseProxyAPIView(APIView):
         path = kwargs.get("path", "")
         LOG.debug("[GK][options] forwarding OPTIONS for path=%s", path)
         return self.dispatch_request(request, path)
-

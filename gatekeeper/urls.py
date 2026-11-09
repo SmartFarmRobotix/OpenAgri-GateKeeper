@@ -53,7 +53,7 @@ urlpatterns = [
 
     path('aegis/', include('aegis.urls', namespace='aegis')),
 
-    path("healthz", health_check, name="health_check"),
+    path("healthz/", health_check, name="health_check"),
     path("robots.txt", robots_txt),
 
     path("api/whoami/", WhoAmIView.as_view(), name="whoami"),

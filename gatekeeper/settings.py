@@ -8,7 +8,7 @@ from pathlib import Path
 
 from django.contrib.messages import constants as messages
 
-from .env_helpers import get_env_var
+from .env_helpers import get_env_var, get_secret_env_var
 
 load_dotenv()
 
@@ -21,12 +21,14 @@ if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = get_env_var('DJANGO_SECRET_KEY')
+SECRET_KEY = get_secret_env_var('DJANGO_SECRET_KEY')
 
-JWT_SIGNING_KEY = get_env_var('JWT_SIGNING_KEY')
+JWT_SIGNING_KEY = get_secret_env_var('JWT_SIGNING_KEY')
 JWT_ALG = os.environ.get('JWT_ALG', "HS256")
 JWT_ACCESS_TOKEN_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "60"))
 JWT_REFRESH_TOKEN_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_DAYS", "30"))
+
+DEPLOYMENT_PROFILE = os.getenv('DEPLOYMENT_PROFILE', 'hardened').strip().lower()
 
 # geting from env var from now, but in the future this infos should
 # come with the service registration post request
@@ -202,8 +204,10 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'gatekeeper.custom_middleware.ForceAppendSlashMiddleware.ForceAppendSlashMiddleware',
-    # 'gatekeeper.custom_middleware.RequestLoggingMiddleware.RequestLoggingMiddleware',
 ]
+
+if os.getenv('GK_ACCESS_LOG_ENABLED', 'False') == 'True':
+    MIDDLEWARE.append('gatekeeper.custom_middleware.RequestLoggingMiddleware.RequestLoggingMiddleware')
 
 ROOT_URLCONF = 'gatekeeper.urls'
 
@@ -354,7 +358,7 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_THROTTLE_RATES': {
         'user': '10000/day',
-        'anon': '100/hour'
+        'anon': os.getenv('GK_ANON_THROTTLE_RATE', '100/hour')
     }
 }
 
